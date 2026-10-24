@@ -2,6 +2,100 @@
 (function(){
   const AGENT='https://rycaylyhgjgovyxwhgjg.supabase.co/functions/v1/learnos-agent-research';
   const oldHome=renderHome, oldRun=runResearch, oldBody=renderResultBody;
+  const KNOWLEDGE_KEY='learnos.knowledge.v1';
+
+  function loadKnowledge(){
+    try{return JSON.parse(localStorage.getItem(KNOWLEDGE_KEY)||'[]')}catch{return[]}
+  }
+
+  function saveKnowledge(items){
+    localStorage.setItem(KNOWLEDGE_KEY,JSON.stringify(items.slice(0,500)));
+  }
+
+  function chunkKnowledge(text,size=3500){
+    const parts=String(text||'').split(/\n\s*\n/).map(x=>x.trim()).filter(Boolean);
+    const out=[];let cur='';
+    for(const p of parts){
+      if((cur+'\n\n'+p).length>size&&cur){out.push(cur);cur=p}
+      else cur+=(cur?'\n\n':'')+p;
+    }
+    if(cur)out.push(cur);
+    return out;
+  }
+
+  function addKnowledge(title,text,source='pasted'){
+    const items=loadKnowledge();
+    const now=Date.now();
+    chunkKnowledge(text).forEach((chunk,i)=>{
+      if(chunk.length<40)return;
+      items.unshift({
+        id:'K'+now+'-'+i,
+        title:title||'Saved knowledge',
+        text:chunk,
+        source,
+        created_at:Math.floor(now/1000)
+      });
+    });
+    saveKnowledge(items);
+    return items.length;
+  }
+
+  function knowledgeScore(text,query){
+    const terms=(query.toLowerCase().match(/[a-z0-9][a-z0-9+.-]{2,}/g)||[])
+      .filter(x=>!['the','and','for','that','with','from','this','what','how','why','you','your','about','into'].includes(x));
+    const low=String(text||'').toLowerCase();
+    let score=0;
+    for(const t of terms)score+=Math.min(low.split(t).length-1,8);
+    return score;
+  }
+
+  function relevantKnowledge(query,limit=14){
+    return loadKnowledge()
+      .map(x=>({...x,_score:knowledgeScore(x.text,query)}))
+      .filter(x=>x._score>0)
+      .sort((a,b)=>b._score-a._score)
+      .slice(0,limit)
+      .map(({_score,...x})=>x);
+  }
+
+  function openKnowledgeVault(){
+    const items=loadKnowledge();
+    $('#drawer-content').innerHTML=
+      '<div class="domain">Personal knowledge</div>'+
+      '<h2>Knowledge Vault</h2>'+
+      '<p style="color:var(--muted);font-size:13px">Paste notes, transcripts, posts, or anything you want LearnOS to remember for future research.</p>'+
+      '<input id="knowledge-title" class="topic-input" placeholder="Title, e.g. Meta ads notes" />'+
+      '<textarea id="knowledge-text" class="research-input import-textarea" placeholder="Paste knowledge here…"></textarea>'+
+      '<button class="btn primary" id="knowledge-save">Save to LearnOS</button>'+
+      '<div style="height:10px"></div>'+
+      '<input id="knowledge-files" type="file" multiple accept=".txt,.md,.json,text/plain,text/markdown,application/json" />'+
+      '<button class="btn" id="knowledge-file-save" style="margin-top:8px">Import text files</button>'+
+      '<div class="knowledge-count">'+items.length+' saved knowledge chunks</div>'+
+      (items.length?'<div class="knowledge-list">'+items.slice(0,20).map(x=>
+        '<div class="knowledge-item"><strong>'+escapeHtml(x.title||'Saved knowledge')+'</strong><span>'+escapeHtml((x.text||'').slice(0,120))+(x.text?.length>120?'…':'')+'</span></div>'
+      ).join('')+'</div>':'');
+    const d=$('#drawer');d.classList.add('open');d.setAttribute('aria-hidden','false');
+
+    $('#knowledge-save').onclick=()=>{
+      const title=$('#knowledge-title').value.trim()||'Saved knowledge';
+      const text=$('#knowledge-text').value.trim();
+      if(!text)return $('#knowledge-text').focus();
+      addKnowledge(title,text,'pasted');
+      openKnowledgeVault();
+    };
+
+    $('#knowledge-file-save').onclick=async()=>{
+      const files=[...($('#knowledge-files')?.files||[])];
+      if(!files.length)return $('#knowledge-files')?.click();
+      for(const f of files){
+        if(!/\.(txt|md|json)$/i.test(f.name))continue;
+        const text=await f.text();
+        if(text.trim().length>20)addKnowledge(f.name,text,'file');
+      }
+      openKnowledgeVault();
+    };
+  }
+
 
   renderHome=function(){
     oldHome();
@@ -31,6 +125,7 @@
           '<textarea id="known-input" placeholder="What do you already know? LearnOS will skip the basics."></textarea>'+
           '<input id="prefer-domains" placeholder="Prefer domains: meta.com, reddit.com…" />'+
           '<input id="block-domains" placeholder="Block domains: example.com…" />'+
+          '<button type="button" class="btn knowledge-open" data-knowledge-open="1">Knowledge Vault</button>'+
         '</details>';
       card.insertBefore(box,card.querySelector('.composer-footer'));
     }
@@ -72,7 +167,8 @@
           depth:state.agentDepth||'deep',
           known,
           preferred_domains:preferred,
-          blocked_domains:blocked
+          blocked_domains:blocked,
+          knowledge:relevantKnowledge(mission,14)
         })
       });
 
@@ -118,7 +214,7 @@
         coverage:data.coverage||{},
         executiveSummary:data.executive_summary||'',
         map:guide.slice(0,10).map(x=>x.heading),
-        notice:'LearnOS searched the web for this mission and filtered low-value sources before building this brief.'
+        notice:'LearnOS searched the web, checked your saved knowledge, and filtered low-value sources before building this brief.'
       };
 
       state.result=result;
@@ -217,6 +313,8 @@
   }
 
   document.addEventListener('click',e=>{
+    const knowledge=e.target.closest('[data-knowledge-open]');
+    if(knowledge){e.preventDefault();openKnowledgeVault();return}
     const src=e.target.closest('[data-agent-source]');
     if(src){e.preventDefault();openFindingSources(Number(src.dataset.agentSource));return}
     const next=e.target.closest('[data-next-agent]');
