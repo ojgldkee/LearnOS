@@ -63,8 +63,13 @@ async function runResearch(){
   renderProgress(raw, state.mode);
   try{
     const payload = state.mode==='text' ? {mode:'text',query:topic||'Pasted material',topic:topic||'Pasted material',rawText:raw,depth:state.depth} : {mode:state.mode,query:raw,topic,depth:state.depth};
-    const response = await fetch(API_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    const data = await response.json();
+    let response = await fetch(API_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    let data = await response.json();
+    if(!response.ok && state.mode==='url'){
+      const fallbackUrl='https://rycaylyhgjgovyxwhgjg.supabase.co/functions/v1/learnos-index-search';
+      response=await fetch(fallbackUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:raw,topic})});
+      data=await response.json();
+    }
     if(!response.ok) throw new Error(data.error || data.detail || 'Research failed');
     state.result=data;
     saveHistory(data);
