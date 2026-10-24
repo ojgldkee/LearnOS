@@ -28,3 +28,17 @@ html[data-theme="dark"]{
 .import-textarea{min-height:180px;border:1px solid var(--line);border-radius:15px;background:var(--bg);margin:10px 0 12px;padding:14px}
 .import-big{min-height:48px}
 .import-note{color:var(--muted);font-size:12px;margin:10px 0 0}
+
+.import-status-card{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.import-working{display:flex;align-items:center;gap:12px}
+.import-spinner{width:20px;height:20px;border-radius:50%;border:2px solid var(--line);border-top-color:var(--accent);animation:spin .8s linear infinite;flex:0 0 auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+.import-fallback summary{cursor:pointer;font-weight:700}
+.source-item-grid{display:grid;grid-template-columns:1fr;gap:10px;margin-top:14px}
+.source-item-card{border:1px solid var(--line);background:var(--surface);border-radius:16px;padding:15px}
+.source-item-card strong{display:block;font-size:15px;line-height:1.35}
+.source-item-card p{margin:7px 0 0!important;color:var(--muted)!important;font-size:13px!important;line-height:1.55!important}
+.source-item-card a{display:inline-block;margin-top:9px;color:var(--accent);text-decoration:none;font-size:12px;font-weight:700}
+.limitations-section ul{margin:10px 0 0;padding-left:20px;color:var(--muted)}
+.limitations-section li{margin:7px 0;line-height:1.55}
+@media(max-width:560px){.import-status-card{align-items:flex-start;flex-direction:column}.import-working{align-items:flex-start}}
