@@ -7,6 +7,95 @@
 
   state.currentMission=localStorage.getItem('learnos.mission')||'';
 
+  const baseSaveHistory=saveHistory;
+  const baseRenderLibrary=renderLibrary;
+  const baseRenderResult=renderResult;
+
+  saveHistory=function(data){
+    if(!data.id)data.id=String(Date.now());
+    state.history=[data,...state.history.filter(x=>x.id!==data.id&&x.topic!==data.topic)].slice(0,30);
+    localStorage.setItem('learnos.history',JSON.stringify(state.history));
+  };
+
+  historyCard=function(x){
+    return '<article class="history-card research-card-item" data-id="'+escapeHtml(x.id)+'">'+
+      '<button class="research-delete" type="button" data-delete-id="'+escapeHtml(x.id)+'" aria-label="Delete research">Delete</button>'+
+      '<div class="type">'+escapeHtml(x.mode==='url'?'Website research':x.mode==='text'?'Transcript':'Web research')+'</div>'+
+      '<h3>'+escapeHtml(x.topic)+'</h3>'+
+      '<div class="meta">'+(x.source_count||0)+' sources · '+new Date(x.created_at*1000).toLocaleDateString()+'</div>'+
+    '</article>';
+  };
+
+  function closeDeleteDialog(){
+    document.querySelector('.delete-confirm-backdrop')?.remove();
+  }
+
+  function openDeleteDialog(id){
+    const item=state.history.find(x=>x.id===id);
+    if(!item)return;
+
+    closeDeleteDialog();
+
+    const overlay=document.createElement('div');
+    overlay.className='delete-confirm-backdrop';
+    overlay.innerHTML='<div class="delete-confirm" role="dialog" aria-modal="true" aria-labelledby="delete-title">'+
+      '<div class="delete-kicker">Permanent deletion</div>'+
+      '<h2 id="delete-title">Delete this research?</h2>'+
+      '<p><strong>'+escapeHtml(item.topic)+'</strong> will be permanently removed from LearnOS on this device. This cannot be undone or recovered.</p>'+
+      '<div class="delete-actions">'+
+        '<button type="button" class="btn" data-delete-cancel>Cancel</button>'+
+        '<button type="button" class="btn danger-btn" data-delete-confirm>Delete permanently</button>'+
+      '</div>'+
+    '</div>';
+
+    document.body.appendChild(overlay);
+    overlay.querySelector('[data-delete-cancel]').onclick=closeDeleteDialog;
+    overlay.addEventListener('click',e=>{if(e.target===overlay)closeDeleteDialog()});
+    overlay.querySelector('[data-delete-confirm]').onclick=()=>{
+      state.history=state.history.filter(x=>x.id!==id);
+      localStorage.setItem('learnos.history',JSON.stringify(state.history));
+
+      if(state.result?.id===id)state.result=null;
+
+      closeDeleteDialog();
+      renderLibrary();
+    };
+  }
+
+  document.addEventListener('click',e=>{
+    const del=e.target.closest('[data-delete-id]');
+    if(del){
+      e.preventDefault();
+      e.stopPropagation();
+      openDeleteDialog(del.dataset.deleteId);
+      return;
+    }
+
+    const current=e.target.closest('[data-delete-current]');
+    if(current){
+      e.preventDefault();
+      e.stopPropagation();
+      const id=state.result?.id;
+      if(id)openDeleteDialog(id);
+    }
+  },true);
+
+  renderResult=function(){
+    baseRenderResult();
+    if(!state.result?.id)return;
+
+    const actions=document.querySelector('.result-actions');
+    if(actions&&!actions.querySelector('[data-delete-current]')){
+      const button=document.createElement('button');
+      button.className='btn delete-current-btn';
+      button.type='button';
+      button.setAttribute('data-delete-current','1');
+      button.textContent='Delete';
+      actions.insertBefore(button,actions.firstChild);
+    }
+  };
+
+
   function sameDomain(a,b){
     try{
       return new URL(a).hostname.replace(/^www\./,'').toLowerCase()===
