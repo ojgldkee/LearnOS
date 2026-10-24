@@ -4,7 +4,8 @@ const $$ = (s, el=document) => [...el.querySelectorAll(s)];
 const state = {
   mode:'topic', depth:'standard', result:null, resultTab:'guide',
   history: JSON.parse(localStorage.getItem('learnos.history') || '[]'),
-  theme: localStorage.getItem('learnos.theme') || 'light'
+  theme: localStorage.getItem('learnos.theme') || 'light',
+  pendingImportUrl: ''
 };
 document.documentElement.dataset.theme = state.theme;
 
@@ -74,7 +75,7 @@ async function runResearch(){
     state.result=data;
     saveHistory(data);
     renderResult();
-  }catch(err){renderError(err.message, raw)}
+  }catch(err){state.pendingImportUrl=state.mode==='url'?raw:'';renderError(err.message, raw, state.mode==='url')}
 }
 
 function renderProgress(raw, mode){
@@ -88,8 +89,126 @@ function renderProgress(raw, mode){
   </div><p style="color:var(--muted);font-size:13px;margin-top:18px;max-width:620px">${escapeHtml(raw.slice(0,220))}</p></div>`;
   let p=9,step=1; const timer=setInterval(()=>{ if(!$('#progress-bar')) return clearInterval(timer); p=Math.min(p+Math.random()*8,91); $('#progress-bar').style.width=p+'%'; const n=p>72?4:p>45?3:p>20?2:1; if(n!==step){step=n; for(let i=1;i<=4;i++){const el=$('#s'+i);if(el){el.classList.toggle('done',i<n);el.classList.toggle('active',i===n)}}}},580);
 }
-function renderError(message, original){
-  $('#view').innerHTML=`<div class="error-box"><div class="eyebrow">Research stopped safely</div><h2>That source couldn't be processed.</h2><p>${escapeHtml(message)}</p><button class="btn primary" data-action="home">Back to research</button>${original?`<p style="margin-top:14px;font-size:12px">Nothing was saved or invented.</p>`:''}</div>`;
+function renderError(message, original, canImport=false){
+  $('#view').innerHTML=`<div class="error-box">
+    <div class="eyebrow">Protected source detected</div>
+    <h2>${canImport?'This site needs browser import.':'That source couldn\'t be processed.'}</h2>
+    <p>${escapeHtml(message)}</p>
+    <div class="error-actions">
+      ${canImport?'<button class="btn primary" data-action="protected-import">Open & Import</button>':''}
+      <button class="btn" data-action="home">Back to research</button>
+    </div>
+    ${original?'<p style="margin-top:14px;font-size:12px">LearnOS did not use the CAPTCHA or bot-check page as research content.</p>':''}
+  </div>`;
+}
+
+function bookmarkletCode(){
+  const back='https://ojgldkee.github.io/LearnOS/?import=clipboard';
+  return "javascript:(async()=>{const p='LEARNOS_PAGE\\nTITLE:'+document.title+'\\nURL:'+location.href+'\\n\\n'+document.body.innerText.slice(0,350000);try{await navigator.clipboard.writeText(p)}catch(e){const t=document.createElement('textarea');t.value=p;t.style.position='fixed';t.style.opacity='0';document.body.appendChild(t);t.focus();t.select();document.execCommand('copy');t.remove()}location.href='"+back+"'})()";
+}
+
+function renderProtectedImport(){
+  setNav('');
+  const url=state.pendingImportUrl;
+  $('#view').innerHTML=`<div class="library-shell import-shell">
+    <div class="eyebrow">Browser import</div>
+    <h1 class="page-title">Open it normally.<br>Then send it to LearnOS.</h1>
+    <p class="page-sub">This keeps the CAPTCHA in your browser. LearnOS only receives the readable page after you have access to it.</p>
+
+    <div class="import-card">
+      <div class="import-step"><span>1</span><div><strong>Open the protected site</strong><p>Complete any CAPTCHA or human verification normally.</p></div></div>
+      <a class="btn primary import-open" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Open website ↗</a>
+    </div>
+
+    <div class="import-card">
+      <div class="import-step"><span>2</span><div><strong>Send the page to LearnOS</strong><p>For the easiest iPhone flow, install the “Send to LearnOS” bookmark once, then tap it while you are on any protected page.</p></div></div>
+      <button class="btn" id="copy-bookmarklet">Copy bookmark code</button>
+      <div class="bookmark-help">
+        <b>One-time Safari setup</b>
+        <ol>
+          <li>In Safari, add any page as a bookmark and name it <b>Send to LearnOS</b>.</li>
+          <li>Edit that bookmark.</li>
+          <li>Delete its URL and paste the code you copied here.</li>
+        </ol>
+        <p>After that, on a protected page: pass the CAPTCHA → open your bookmarks → tap <b>Send to LearnOS</b>.</p>
+      </div>
+    </div>
+
+    <div class="import-card">
+      <div class="import-step"><span>3</span><div><strong>Or paste the page manually</strong><p>If your browser does not support the bookmark method, paste copied page text here instead.</p></div></div>
+      <textarea id="manual-import-text" class="research-input import-textarea" placeholder="Paste the readable page text here…"></textarea>
+      <button class="btn primary" id="manual-import-go">Import pasted page</button>
+    </div>
+  </div>`;
+
+  $('#copy-bookmarklet').onclick=async()=>{
+    try{
+      await navigator.clipboard.writeText(bookmarkletCode());
+      $('#copy-bookmarklet').textContent='Copied ✓';
+    }catch{
+      const box=document.createElement('textarea');
+      box.value=bookmarkletCode();
+      document.body.appendChild(box);box.select();document.execCommand('copy');box.remove();
+      $('#copy-bookmarklet').textContent='Copied ✓';
+    }
+  };
+  $('#manual-import-go').onclick=()=>importCapturedText($('#manual-import-text').value.trim());
+}
+
+function renderClipboardImport(){
+  setNav('');
+  $('#view').innerHTML=`<div class="library-shell import-shell">
+    <div class="eyebrow">Page captured</div>
+    <h1 class="page-title">Bring the page into LearnOS.</h1>
+    <p class="page-sub">Your browser copied the readable page. Tap below to import it and build the research guide.</p>
+    <div class="import-card">
+      <button class="btn primary import-big" id="clipboard-import-go">Import page from clipboard</button>
+      <p class="import-note">Clipboard access only happens after you tap this button.</p>
+    </div>
+    <div class="import-card">
+      <strong>Clipboard blocked?</strong>
+      <p class="import-note">Paste the page manually below.</p>
+      <textarea id="manual-import-text" class="research-input import-textarea" placeholder="Paste page text…"></textarea>
+      <button class="btn" id="manual-import-go">Import pasted page</button>
+    </div>
+  </div>`;
+  $('#clipboard-import-go').onclick=async()=>{
+    try{
+      const text=await navigator.clipboard.readText();
+      importCapturedText(text);
+    }catch(e){
+      $('#clipboard-import-go').textContent='Clipboard blocked — paste below';
+      $('#manual-import-text').focus();
+    }
+  };
+  $('#manual-import-go').onclick=()=>importCapturedText($('#manual-import-text').value.trim());
+}
+
+async function importCapturedText(raw){
+  if(!raw){$('#manual-import-text')?.focus();return}
+  let title='Imported web page',url=state.pendingImportUrl||'',text=raw;
+  if(raw.startsWith('LEARNOS_PAGE')){
+    const mTitle=raw.match(/^TITLE:(.*)$/m);
+    const mUrl=raw.match(/^URL:(.*)$/m);
+    if(mTitle)title=cleanHeading(mTitle[1].trim());
+    if(mUrl)url=mUrl[1].trim();
+    text=raw.replace(/^LEARNOS_PAGE\s*/,'').replace(/^TITLE:.*$/m,'').replace(/^URL:.*$/m,'').trim();
+  }
+  renderProgress(title,'text');
+  try{
+    const payload={mode:'text',query:title,topic:title,rawText:text,depth:'standard'};
+    const response=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.error||'Import failed');
+    data.topic=title;
+    data.mode='url';
+    if(url){
+      (data.pages||[]).forEach(p=>{p.url=url;p.domain=host(url);p.title=title});
+      (data.guide||[]).forEach(g=>{g.sourceUrl=url;g.domain=host(url);g.sourceTitle=title});
+    }
+    data.notice='Imported from the readable page in your browser after you passed the site\'s verification. LearnOS did not bypass the CAPTCHA.';
+    state.result=data;saveHistory(data);history.replaceState({},'',location.pathname);renderResult();
+  }catch(e){renderError(e.message,raw,false)}
 }
 function saveHistory(data){
   const compact={...data,id:String(Date.now())};
@@ -127,6 +246,7 @@ function renderLibrary(){setNav('library');$('#view').innerHTML=`<div class="lib
 function wireLibrary(){ $$('.history-card').forEach(c=>c.onclick=()=>openHistory(c.dataset.id)); $('#library-search')?.addEventListener('input',e=>{const q=e.target.value.toLowerCase();$('#library-grid').innerHTML=state.history.filter(x=>x.topic.toLowerCase().includes(q)).map(historyCard).join('')||'<div class="empty">Nothing matched.</div>';$$('.history-card').forEach(c=>c.onclick=()=>openHistory(c.dataset.id))})}
 function renderExplore(){setNav('explore');$('#view').innerHTML=`<div class="library-shell"><div class="eyebrow">Explore</div><h1 class="page-title">Follow what matters.<br>Not a feed.</h1><p class="page-sub">This section is intentionally quiet in V1. It will eventually surface only source-backed changes connected to topics already in your library—no infinite scroll and no generic AI ideas.</p><div class="empty">Research a few topics first. LearnOS will use your actual library to build relevant branches later.</div></div>`}
 
-document.addEventListener('click',e=>{const a=e.target.closest('[data-action]');if(!a)return;const act=a.dataset.action;if(act==='home')renderHome();if(act==='library')renderLibrary();if(act==='explore')renderExplore();if(act==='close-drawer')closeDrawer();if(act==='theme'){state.theme=state.theme==='light'?'dark':'light';document.documentElement.dataset.theme=state.theme;localStorage.setItem('learnos.theme',state.theme)}});
+document.addEventListener('click',e=>{const a=e.target.closest('[data-action]');if(!a)return;const act=a.dataset.action;if(act==='home')renderHome();if(act==='library')renderLibrary();if(act==='explore')renderExplore();if(act==='protected-import')renderProtectedImport();if(act==='close-drawer')closeDrawer();if(act==='theme'){state.theme=state.theme==='light'?'dark':'light';document.documentElement.dataset.theme=state.theme;localStorage.setItem('learnos.theme',state.theme)}});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer();if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();renderHome();setTimeout(()=>$('#research-input')?.focus(),10)}});
-renderHome();
+const _importMode=new URLSearchParams(location.search).get('import');
+if(_importMode==='clipboard') renderClipboardImport(); else renderHome();
